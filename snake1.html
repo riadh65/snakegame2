@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>لعبة الأفعى الاحترافية</title>
+  <style>
+    body { margin:0; background:#222; color:#fff; font-family:sans-serif; text-align:center; }
+    #game { background:#111; display:none; margin:10px auto; touch-action:none; }
+    .ui { display:flex; justify-content:space-around; margin:5px 10px; }
+    .score, .level { font-size:18px; }
+    .controls { display:flex; justify-content:center; margin:10px; }
+    .btn { width:60px; height:60px; margin:5px; font-size:30px; background:#4CAF50; color:#fff; border:none; border-radius:8px; }
+    .action-btns { margin:10px; }
+    .action-btns button { margin:0 5px; padding:10px 20px; font-size:16px; }
+    #startScreen {
+      display:flex; justify-content:center; align-items:center;
+      height:100vh; background:#111;
+      flex-direction: column;
+    }
+    #startBtn {
+      padding:20px 40px; font-size:24px; background:#4CAF50; color:#fff;
+      border:none; border-radius:12px; cursor:pointer;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      user-select:none;
+    }
+  </style>
+</head>
+<body>
+  <div id="startScreen">
+    <button id="startBtn">اضغط هنا لتشغيل الصوت والبدء باللعب</button>
+  </div>
+
+  <h1 style="display:none;" id="gameTitle">لعبة الأفعى - المستوى الاحترافي</h1>
+  <div class="ui" style="display:none;" id="gameUI">
+    <div class="score">النقاط: 0</div>
+    <div class="level">المستوى: 1</div>
+  </div>
+  <canvas id="game" width="320" height="320"></canvas>
+  <div class="controls" style="display:none;" id="gameControls1">
+    <button id="up" class="btn">⬆️</button>
+  </div>
+  <div class="controls" style="display:none;" id="gameControls2">
+    <button id="left" class="btn">⬅️</button>
+    <button id="down" class="btn">⬇️</button>
+    <button id="right" class="btn">➡️</button>
+  </div>
+  <div class="action-btns" style="display:none;" id="gameActionBtns">
+    <button id="pauseBtn">إيقاف مؤقت</button>
+    <button id="resetBtn">إعادة تشغيل</button>
+  </div>
+
+  <audio id="eat-sound" src="https://actions.google.com/sounds/v1/food/food_crunch.ogg"></audio>
+  <audio id="dead-sound" src="https://actions.google.com/sounds/v1/impacts/crash.ogg"></audio>
+
+  <script>
+    const startScreen = document.getElementById('startScreen');
+    const startBtn = document.getElementById('startBtn');
+    const gameTitle = document.getElementById('gameTitle');
+    const gameUI = document.getElementById('gameUI');
+    const gameControls1 = document.getElementById('gameControls1');
+    const gameControls2 = document.getElementById('gameControls2');
+    const gameActionBtns = document.getElementById('gameActionBtns');
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.querySelector('.score');
+    const levelEl = document.querySelector('.level');
+    const eatSound = document.getElementById('eat-sound');
+    const deadSound = document.getElementById('dead-sound');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const scale = 16, rows = canvas.height / scale, cols = canvas.width / scale;
+    let snake, food, speed = 150, points = 0, level = 1, intervalId = null;
+    let isPaused = false, soundEnabled = false;
+
+    function randomFood() {
+      return {
+        x: Math.floor(Math.random() * cols) * scale,
+        y: Math.floor(Math.random() * rows) * scale,
+        draw() { ctx.fillStyle = '#f00'; ctx.fillRect(this.x, this.y, scale, scale); }
+      };
+    }
+
+    class Snake {
+      constructor(){
+        this.x = 0; this.y = 0;
+        this.xSpeed = scale; this.ySpeed = 0;
+        this.total = 0; this.tail = [];
+      }
+      draw(){
+        ctx.fillStyle = '#0f0';
+        this.tail.forEach(seg => ctx.fillRect(seg.x, seg.y, scale, scale));
+        ctx.fillRect(this.x, this.y, scale, scale);
+      }
+      update(){
+        this.tail = this.tail.slice(-this.total);
+        if (this.total) this.tail.push({ x: this.x, y: this.y });
+        this.x += this.xSpeed; this.y += this.ySpeed;
+        if (this.x < 0 || this.x >= canvas.width || this.y < 0 || this.y >= canvas.height) this.dead();
+      }
+      change(dir) {
+        if (dir === 'Up' && this.ySpeed === 0) { this.xSpeed = 0; this.ySpeed = -scale; }
+        if (dir === 'Down' && this.ySpeed === 0) { this.xSpeed = 0; this.ySpeed = scale; }
+        if (dir === 'Left' && this.xSpeed === 0) { this.xSpeed = -scale; this.ySpeed = 0; }
+        if (dir === 'Right' && this.xSpeed === 0) { this.xSpeed = scale; this.ySpeed = 0; }
+      }
+      eat(f) {
+        if (this.x === f.x && this.y === f.y) {
+          this.total++; points++;
+          if (soundEnabled) eatSound.play();
+          updateUI();
+          if (points % 5 === 0 && level < 10) levelUp();
+          return true;
+        }
+        return false;
+      }
+      dead() {
+        clearInterval(intervalId);
+        if (soundEnabled) deadSound.play();
+        setTimeout(() => {
+          alert(`خسرت! نقاطك: ${points}`);
+          resetGame();
+        }, 50);
+      }
+      checkCollision() {
+        this.tail.forEach(seg => { if (this.x === seg.x && this.y === seg.y) this.dead(); });
+      }
+    }
+
+    function updateUI() {
+      scoreEl.textContent = `النقاط: ${points}`;
+      levelEl.textContent = `المستوى: ${level}`;
+    }
+
+    function levelUp() {
+      level++;
+      speed = Math.max(50, speed - 10);
+      clearInterval(intervalId);
+      intervalId = setInterval(gameLoop, speed);
+      updateUI();
+    }
+
+    function resetGame() {
+      points = 0; level = 1; speed = 150; isPaused = false;
+      updateUI();
+      init();
+    }
+
+    function init() {
+      snake = new Snake();
+      food = randomFood();
+      clearInterval(intervalId);
+      intervalId = setInterval(gameLoop, speed);
+      gameTitle.style.display = "block";
+      gameUI.style.display = "flex";
+      gameControls1.style.display = "flex";
+      gameControls2.style.display = "flex";
+      gameActionBtns.style.display = "block";
+      canvas.style.display = "block";
+    }
+
+    function gameLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      food.draw();
+      snake.update();
+      snake.draw();
+      if (snake.eat(food)) food = randomFood();
+      snake.checkCollision();
+    }
+
+    ['up','down','left','right'].forEach(id => {
+      document.getElementById(id).addEventListener('click', () => {
+        if (!soundEnabled) {
+          soundEnabled = true;
+          eatSound.play().catch(() => {});
+        }
+        snake.change(id.charAt(0).toUpperCase() + id.slice(1));
+      });
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      if (!intervalId) return;
+      if (!isPaused) { clearInterval(intervalId); pauseBtn.textContent = 'استئناف'; }
+      else { intervalId = setInterval(gameLoop, speed); pauseBtn.textContent = 'إيقاف مؤقت'; }
+      isPaused = !isPaused;
+    });
+
+    resetBtn.addEventListener('click', resetGame);
+
+    window.addEventListener('keydown', e => snake.change(e.key.replace('Arrow','')));
+
+    startBtn.addEventListener('click', () => {
+      soundEnabled = true;
+      eatSound.play().catch(() => {});
+      startScreen.style.display = 'none';
+      init();
+    });
+  </script>
+</body>
+</html>
